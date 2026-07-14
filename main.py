@@ -8,6 +8,7 @@ import time
 import glob
 import numpy as np
 import cv2
+import subprocess
 
 # Import local modules
 from camera import StereoCameraManager
@@ -70,6 +71,9 @@ class DeviceSettings(BaseModel):
 
 class SequenceRequest(BaseModel):
     colors: list[list[int]] # list of [R,G,B]
+
+class Scan360Request(BaseModel):
+    count: int = 36
 
 # Lifetime events
 @app.on_event("startup")
@@ -285,6 +289,39 @@ async def run_scan_sequence(req: SequenceRequest, background_tasks: BackgroundTa
         
     background_tasks.add_task(sequence_task)
     return {"status": "success", "message": "Automated scan sequence started in background."}
+
+@app.post("/api/scan/360")
+async def run_360_scan(req: Scan360Request, background_tasks: BackgroundTasks):
+    def scan_360_task():
+        for i in range(req.count):
+            prefix = f"scan360_{i+1}_of_{req.count}"
+            camera_manager.capture_still_pair(SCANS_DIR, file_prefix=prefix)
+            time.sleep(2.0) # 2 seconds delay for user/turntable to rotate object
+            
+    background_tasks.add_task(scan_360_task)
+    return {"status": "success", "message": f"Started 360 scan for {req.count} angles in background."}
+
+@app.post("/api/scan/reconstruct")
+async def run_reconstruct():
+    # Call the local python extension script for 3D conversion
+    extension_script = os.path.join(WORKSPACE_DIR, "extension_3d_converter.py")
+    if not os.path.exists(extension_script):
+        raise HTTPException(status_code=500, detail="Converter extension script not found.")
+        
+    try:
+        # Run subprocess and wait for it to complete
+        result = subprocess.run(["python3", extension_script, SCANS_DIR], capture_output=True, text=True)
+        if result.returncode == 0:
+            # Check for the generated .3mf file
+            output_file = "reconstructed_model.3mf"
+            if os.path.exists(os.path.join(SCANS_DIR, output_file)):
+                return {"status": "success", "message": "3D reconstruction complete.", "file": output_file}
+            else:
+                raise HTTPException(status_code=500, detail="Reconstruction succeeded but output file not found.")
+        else:
+            raise HTTPException(status_code=500, detail=f"Reconstruction failed: {result.stderr}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # API: VR Stereoscopic Video Recording
 @app.post("/api/record/start")

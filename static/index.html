@@ -356,6 +356,30 @@
                                     <i class="fa-solid fa-camera-retro"></i> Capture Stereo Scan Pair
                                 </button>
                             </div>
+
+                            <hr class="card-divider mt-lg">
+
+                            <div class="mt-md">
+                                <h4>360° Multi-Angle Batch Scan</h4>
+                                <p class="desc-text mt-sm">Automatically capture multiple angles for 3D reconstruction. You will have 2 seconds between each capture to rotate the object or camera.</p>
+                                <div class="form-group mt-sm">
+                                    <label for="scan-angle-count">Number of Angles (e.g. 25-100)</label>
+                                    <input type="number" id="scan-angle-count" min="5" max="200" value="36">
+                                </div>
+                                <button class="btn btn-secondary mt-md w-100" id="btn-360-scan" onclick="start360Scan()">
+                                    <i class="fa-solid fa-sync"></i> Start 360° Scan
+                                </button>
+                            </div>
+
+                            <hr class="card-divider mt-lg">
+
+                            <div class="mt-md">
+                                <h4>Generate 3D Model</h4>
+                                <p class="desc-text mt-sm">Convert captured datasets to 3D (.3mf/.stl) using the local Polycam-like converter extension.</p>
+                                <button class="btn btn-primary mt-md w-100" id="btn-reconstruct" onclick="run3DReconstruction()">
+                                    <i class="fa-solid fa-cube"></i> Generate 3D Mesh (.3mf)
+                                </button>
+                            </div>
                         </div>
                     </div>
 

@@ -473,6 +473,55 @@ async function captureScanPair() {
     }
 }
 
+// 360 Multi-angle Scan
+async function start360Scan() {
+    const numAngles = parseInt(document.getElementById("scan-angle-count").value) || 36;
+    const btn = document.getElementById("btn-360-scan");
+    btn.disabled = true;
+    btn.innerHTML = "<i class='fa-solid fa-spinner fa-spin'></i> Scanning...";
+
+    try {
+        const response = await fetch("/api/scan/360", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ count: numAngles })
+        });
+        const res = await response.json();
+        alert(res.message);
+        
+        // Polling or refresh delay might be needed, but for now we refresh immediately and trust backend
+        setTimeout(refreshFileList, 3000);
+    } catch (e) {
+        alert("Failed to start 360 scan sequence.");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = "<i class='fa-solid fa-sync'></i> Start 360° Scan";
+    }
+}
+
+// 3D Reconstruction Extension
+async function run3DReconstruction() {
+    const btn = document.getElementById("btn-reconstruct");
+    btn.disabled = true;
+    btn.innerHTML = "<i class='fa-solid fa-spinner fa-spin'></i> Processing Mesh...";
+
+    try {
+        const response = await fetch("/api/scan/reconstruct", { method: "POST" });
+        const res = await response.json();
+        if (response.ok) {
+            alert(res.message + "\nFile: " + res.file);
+            refreshFileList();
+        } else {
+            alert("Error: " + res.detail);
+        }
+    } catch (e) {
+        alert("Reconstruction pipeline failed to start.");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = "<i class='fa-solid fa-cube'></i> Generate 3D Mesh (.3mf)";
+    }
+}
+
 // 12. File list and download rendering
 async function refreshFileList() {
     try {
