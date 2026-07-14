@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Pro3Dscan: 3D Scanner & VR Stereoscopic Camera Software. Calibrate stereo cameras, calculate baseline, control NeoPixels, and record SBS 3D VR videos.">
+    <title>Pro3Dscan Dashboard</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom Style Sheet -->
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-cube logo-icon"></i>
+                <h1>Pro<span>3D</span>scan</h1>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" id="tab-btn-dashboard" onclick="switchTab('dashboard')">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard
+                </a>
+                <a href="#" class="nav-item" id="tab-btn-calibration" onclick="switchTab('calibration')">
+                    <i class="fa-solid fa-sliders"></i> Calibration
+                </a>
+                <a href="#" class="nav-item" id="tab-btn-calculator" onclick="switchTab('calculator')">
+                    <i class="fa-solid fa-calculator"></i> Baseline Calculator
+                </a>
+                <a href="#" class="nav-item" id="tab-btn-scanner" onclick="switchTab('scanner')">
+                    <i class="fa-solid fa-camera-retro"></i> Capture Scanner
+                </a>
+                <a href="#" class="nav-item" id="tab-btn-settings" onclick="switchTab('settings')">
+                    <i class="fa-solid fa-gears"></i> Device Manager
+                </a>
+            </nav>
+            <div class="sidebar-status">
+                <div class="status-item">
+                    <span class="status-dot green" id="hardware-cam-status-dot"></span>
+                    <span>Dual Cameras Connected</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-dot red" id="hardware-light-status-dot"></span>
+                    <span id="hardware-light-status-text">NeoPixels Offline</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="content-area">
+            <!-- HEADER -->
+            <header class="main-header">
+                <h2 id="page-title">Dashboard</h2>
+                <div class="system-time">
+                    <i class="fa-regular fa-clock"></i>
+                    <span id="live-clock">00:00:00</span>
+                </div>
+            </header>
+
+            <!-- TAB CONTENT: DASHBOARD -->
+            <section id="tab-dashboard" class="tab-content active">
+                <div class="grid-2col">
+                    <!-- Live Camera Feed Panel -->
+                    <div class="glass-card feed-card">
+                        <div class="card-header">
+                            <h3>Live Stereo Preview</h3>
+                            <div class="feed-selectors">
+                                <button class="btn btn-sm active" id="feed-opt-split" onclick="setFeedMode('split')">Split View</button>
+                                <button class="btn btn-sm" id="feed-opt-sbs" onclick="setFeedMode('sbs')">SBS Raw</button>
+                                <button class="btn btn-sm" id="feed-opt-rectified" onclick="setFeedMode('rectified')">Rectified</button>
+                            </div>
+                        </div>
+                        <div class="stream-container" id="stream-view-wrapper">
+                            <!-- Split View (Default) -->
+                            <div class="split-view" id="split-view-container">
+                                <div class="camera-feed-box">
+                                    <div class="feed-label">LEFT EYE</div>
+                                    <img id="feed-left-img" src="/stream/left" alt="Left Camera Feed">
+                                </div>
+                                <div class="camera-feed-box">
+                                    <div class="feed-label">RIGHT EYE</div>
+                                    <img id="feed-right-img" src="/stream/right" alt="Right Camera Feed">
+                                </div>
+                            </div>
+                            <!-- Single Merged Views (Hidden by default) -->
+                            <div class="sbs-view-container hidden" id="sbs-view-container">
+                                <div class="feed-label" id="sbs-label">SBS MERGED</div>
+                                <img id="feed-sbs-img" src="" alt="SBS Video Feed">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- VR Video Recording Control Panel -->
+                    <div class="glass-card recording-card">
+                        <div class="card-header">
+                            <h3>VR 3D Stereoscopic Recording</h3>
+                            <span class="badge badge-vr">VR SBS Format</span>
+                        </div>
+                        <div class="card-body">
+                            <p class="desc-text">Record synchronized Side-by-Side (SBS) 3D video. The output MP4 file is formatted for standard VR players (Quest, Vision Pro) using your cameras' baseline.</p>
+                            
+                            <div class="recording-status-box">
+                                <div class="rec-indicator" id="rec-indicator-circle"></div>
+                                <div class="timer" id="record-timer">00:00</div>
+                                <div class="info" id="record-info-text">Ready to Record</div>
+                            </div>
+
+                            <div class="flex-actions mt-lg">
+                                <button class="btn btn-danger btn-large" id="btn-start-record" onclick="startRecording()">
+                                    <i class="fa-solid fa-circle"></i> Start Recording
+                                </button>
+                                <button class="btn btn-secondary btn-large" id="btn-stop-record" onclick="stopRecording()" disabled>
+                                    <i class="fa-solid fa-square"></i> Stop & Save
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Overview Grid -->
+                <div class="grid-3col mt-lg">
+                    <div class="glass-card status-mini">
+                        <i class="fa-solid fa-microchip accent-orange"></i>
+                        <div>
+                            <h4>Microcontroller link</h4>
+                            <p class="status-sub" id="mini-neopixel-status">Not Connected</p>
+                        </div>
+                    </div>
+                    <div class="glass-card status-mini">
+                        <i class="fa-solid fa-circle-check accent-green"></i>
+                        <div>
+                            <h4>Calibration Status</h4>
+                            <p class="status-sub" id="mini-calib-status">Uncalibrated</p>
+                        </div>
+                    </div>
+                    <div class="glass-card status-mini">
+                        <i class="fa-solid fa-folder-open accent-blue"></i>
+                        <div>
+                            <h4>Saved Scans</h4>
+                            <p class="status-sub" id="mini-scan-count">0 Captures</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB CONTENT: CALIBRATION -->
+            <section id="tab-calibration" class="tab-content">
+                <div class="grid-2col">
+                    <!-- Live feeds showing Chessboard detection -->
+                    <div class="glass-card feed-card">
+                        <div class="card-header">
+                            <h3>Chessboard Pattern Calibration</h3>
+                            <span class="badge" id="calib-frame-badge">0 Frames Captured</span>
+                        </div>
+                        <div class="stream-container">
+                            <div class="split-view">
+                                <div class="camera-feed-box">
+                                    <div class="feed-label">LEFT VIEW</div>
+                                    <img id="calib-left-img" src="/stream/left" alt="Left Camera Feed">
+                                </div>
+                                <div class="camera-feed-box">
+                                    <div class="feed-label">RIGHT VIEW</div>
+                                    <img id="calib-right-img" src="/stream/right" alt="Right Camera Feed">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer-buttons">
+                            <button class="btn btn-primary" id="btn-capture-calib" onclick="captureCalibrationFrame()">
+                                <i class="fa-solid fa-camera"></i> Capture Calibration Frame
+                            </button>
+                            <button class="btn btn-secondary" id="btn-reset-calib" onclick="resetCalibration()">
+                                <i class="fa-solid fa-rotate-left"></i> Reset Points
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Calibration Settings & Math Data -->
+                    <div class="glass-card calibration-math-card">
+                        <div class="card-header">
+                            <h3>Stereo Math & Results</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="instructions-box">
+                                <h4>How to Calibrate:</h4>
+                                <ol>
+                                    <li>Print a standard chessboard pattern (e.g., 9x6 inner corners).</li>
+                                    <li>Hold the pattern in front of both cameras at different distances, rotations, and positions.</li>
+                                    <li>Click <strong>Capture Calibration Frame</strong>. Capture at least 10 different poses.</li>
+                                    <li>Click <strong>Calculate Calibration</strong>.</li>
+                                </ol>
+                            </div>
+
+                            <div class="calibration-settings-row mt-md">
+                                <div class="form-group">
+                                    <label for="calib-grid-w">Cols (inner corners)</label>
+                                    <input type="number" id="calib-grid-w" value="9" min="3">
+                                </div>
+                                <div class="form-group">
+                                    <label for="calib-grid-h">Rows (inner corners)</label>
+                                    <input type="number" id="calib-grid-h" value="6" min="3">
+                                </div>
+                                <div class="form-group">
+                                    <label for="calib-sq-size">Square Size (mm)</label>
+                                    <input type="number" id="calib-sq-size" value="25" min="1">
+                                </div>
+                            </div>
+
+                            <button class="btn btn-glow mt-lg w-100" id="btn-calculate-calib" onclick="calculateCalibration()">
+                                <i class="fa-solid fa-calculator"></i> Calculate Calibration
+                            </button>
+
+                            <div class="math-matrix-box mt-lg">
+                                <h4>Extrinsic Parameters</h4>
+                                <div class="matrix-output">
+                                    <strong>Translation Vector T (mm):</strong>
+                                    <pre id="matrix-t-out">T = [0.00, 0.00, 0.00]</pre>
+                                    <strong>Rotation Vector R (degrees):</strong>
+                                    <pre id="matrix-r-out">R = [0.00, 0.00, 0.00]</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB CONTENT: BASELINE CALCULATOR -->
+            <section id="tab-calculator" class="tab-content">
+                <div class="grid-2col">
+                    <!-- Calculator Inputs -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <h3>Parameters</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="calc-dist">Working Distance (Distance to Object, Z) [mm]</label>
+                                <input type="range" id="calc-dist" min="100" max="2000" value="500" oninput="updateCalculator()">
+                                <div class="range-val"><span id="lbl-calc-dist">500</span> mm</div>
+                            </div>
+
+                            <div class="form-group mt-md">
+                                <label for="calc-fov">Camera Field of View (Horizontal, FOV) [deg]</label>
+                                <input type="range" id="calc-fov" min="30" max="120" value="60" oninput="updateCalculator()">
+                                <div class="range-val"><span id="lbl-calc-fov">60</span> °</div>
+                            </div>
+
+                            <div class="form-group mt-md">
+                                <label for="calc-dval">Desired Depth Accuracy (ΔZ) [mm]</label>
+                                <input type="range" id="calc-dval" min="0.5" max="20" step="0.5" value="5.0" oninput="updateCalculator()">
+                                <div class="range-val"><span id="lbl-calc-dval">5.0</span> mm</div>
+                            </div>
+                            
+                            <div class="form-group mt-md">
+                                <label for="calc-res">Camera Image Width [pixels]</label>
+                                <select id="calc-res" onchange="updateCalculator()">
+                                    <option value="640">640 px (VGA)</option>
+                                    <option value="1280" selected>1280 px (HD)</option>
+                                    <option value="1920">1920 px (FHD)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Calculations Output & SVG Viz -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <h3>Optimal Stereo Baseline</h3>
+                        </div>
+                        <div class="card-body center-text">
+                            <div class="baseline-result-box">
+                                <span class="calc-label">RECOMMENDED BASELINE</span>
+                                <div class="calc-number"><span id="calc-result-baseline">65</span> mm</div>
+                                <p class="calc-explanation" id="calc-result-text">This distance guarantees a depth precision of 5.0 mm at 500 mm away.</p>
+                            </div>
+
+                            <!-- Interactive SVG baseline diagram -->
+                            <div class="svg-container mt-lg">
+                                <svg width="100%" height="200" id="baseline-svg" viewBox="0 0 400 200">
+                                    <!-- Background -->
+                                    <rect width="100%" height="100%" fill="none"></rect>
+                                    <!-- Object -->
+                                    <circle cx="200" cy="30" r="10" fill="#ff69b4" id="svg-object"></circle>
+                                    <text x="200" y="18" fill="#fff" font-size="10" text-anchor="middle">Object</text>
+                                    
+                                    <!-- Left Camera -->
+                                    <rect x="120" y="160" width="30" height="20" rx="3" fill="#00ffff" id="svg-cam-left"></rect>
+                                    <circle cx="135" cy="160" r="3" fill="#fff"></circle>
+                                    
+                                    <!-- Right Camera -->
+                                    <rect x="250" y="160" width="30" height="20" rx="3" fill="#00ffff" id="svg-cam-right"></rect>
+                                    <circle cx="265" cy="160" r="3" fill="#fff"></circle>
+                                    
+                                    <!-- Lines of Sight -->
+                                    <line x1="135" y1="160" x2="200" y2="30" stroke="rgba(0, 255, 255, 0.4)" stroke-dasharray="3,3" id="svg-line-left"></line>
+                                    <line x1="265" y1="160" x2="200" y2="30" stroke="rgba(0, 255, 255, 0.4)" stroke-dasharray="3,3" id="svg-line-right"></line>
+                                    
+                                    <!-- Baseline indicator line -->
+                                    <line x1="135" y1="170" x2="265" y2="170" stroke="#ffa500" stroke-width="2" id="svg-baseline-line"></line>
+                                    <text x="200" y="188" fill="#ffa500" font-size="11" text-anchor="middle" font-weight="bold" id="svg-baseline-text">Baseline B = 65mm</text>
+                                    
+                                    <!-- Working Distance indicator line -->
+                                    <line x1="200" y1="30" x2="200" y2="170" stroke="#00ff00" stroke-width="1" stroke-dasharray="5,5" id="svg-distance-line"></line>
+                                    <text x="208" y="100" fill="#00ff00" font-size="10" id="svg-distance-text">Z = 500mm</text>
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card mt-lg">
+                    <div class="card-header">
+                        <h3>Baseline Placement Rules Summary</h3>
+                    </div>
+                    <div class="card-body grid-2col no-gap-mobile">
+                        <div>
+                            <h4 class="accent-pink"><i class="fa-solid fa-vr-cardboard"></i> Rule for VR Stereoscopic Video</h4>
+                            <p class="desc-text mt-sm">Keep the cameras exactly <strong>60 to 65 mm</strong> apart (matching human eyes). Mount them perfectly parallel. Do not tilt them inward. This ensures the output recording feels correct when played in a VR headset.</p>
+                        </div>
+                        <div>
+                            <h4 class="accent-cyan"><i class="fa-solid fa-shapes"></i> Rule for 3D Scanning / Reconstruction</h4>
+                            <p class="desc-text mt-sm">Choose a baseline roughly <strong>10% to 20%</strong> of the camera-to-object distance. For scanning small desktop items 30 cm away, a baseline of 3 to 6 cm is optimal. Keep them slightly toed-in if maximizing close overlap is required.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB CONTENT: CAPTURE SCANNER -->
+            <section id="tab-scanner" class="tab-content">
+                <div class="grid-2col">
+                    <!-- Scanner Feed and Capture Control -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <h3>Photogrammetry Object Scanning</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stream-container">
+                                <div class="split-view">
+                                    <div class="camera-feed-box">
+                                        <div class="feed-label">LEFT SCAN SENSOR</div>
+                                        <img id="scan-left-img" src="/stream/left" alt="Left Camera Feed">
+                                    </div>
+                                    <div class="camera-feed-box">
+                                        <div class="feed-label">RIGHT SCAN SENSOR</div>
+                                        <img id="scan-right-img" src="/stream/right" alt="Right Camera Feed">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="flex-actions mt-lg">
+                                <button class="btn btn-glow btn-large" id="btn-scan-capture" onclick="captureScanPair()">
+                                    <i class="fa-solid fa-camera-retro"></i> Capture Stereo Scan Pair
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- NeoPixel Light Controller & Sequence Manager -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <h3>NeoPixel Active Light Control</h3>
+                            <span class="badge badge-neopixel" id="neopixel-badge">Offline</span>
+                        </div>
+                        <div class="card-body">
+                            <!-- Connection block -->
+                            <div class="serial-conn-box">
+                                <div class="form-group">
+                                    <label for="neopixel-port-select">Select Serial Port</label>
+                                    <select id="neopixel-port-select">
+                                        <option value="">No Ports Available</option>
+                                    </select>
+                                </div>
+                                <button class="btn btn-secondary" id="btn-neopixel-connect" onclick="connectNeoPixels()">Connect</button>
+                            </div>
+
+                            <hr class="card-divider mt-md">
+
+                            <!-- LED settings -->
+                            <div class="mt-md">
+                                <h4>Solid Color Ring Fills</h4>
+                                <div class="color-presets-row mt-sm">
+                                    <button class="color-dot bg-red" onclick="setSolidColor(255,0,0)" title="Red"></button>
+                                    <button class="color-dot bg-green" onclick="setSolidColor(0,255,0)" title="Green"></button>
+                                    <button class="color-dot bg-blue" onclick="setSolidColor(0,0,255)" title="Blue"></button>
+                                    <button class="color-dot bg-yellow" onclick="setSolidColor(255,255,0)" title="Yellow"></button>
+                                    <button class="color-dot bg-cyan" onclick="setSolidColor(0,255,255)" title="Cyan"></button>
+                                    <button class="color-dot bg-magenta" onclick="setSolidColor(255,0,255)" title="Magenta"></button>
+                                    <button class="color-dot bg-white" onclick="setSolidColor(255,255,255)" title="White"></button>
+                                    <button class="color-dot bg-black" onclick="setSolidColor(0,0,0)" title="Turn Off"></button>
+                                </div>
+                                
+                                <div class="form-group mt-md">
+                                    <label for="led-brightness">Overall Brightness (0-255)</label>
+                                    <input type="range" id="led-brightness" min="0" max="255" value="100" oninput="changeBrightness(this.value)">
+                                    <div class="range-val"><span id="lbl-led-brightness">100</span></div>
+                                </div>
+                            </div>
+
+                            <hr class="card-divider mt-md">
+
+                            <!-- Presets & Sequence -->
+                            <div class="mt-md">
+                                <h4>Animated Lighting Sequences</h4>
+                                <div class="flex-actions mt-sm">
+                                    <button class="btn btn-secondary btn-sm" onclick="triggerPreset(1)">RGB Sweep</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="triggerPreset(2)">White Spot Rotation</button>
+                                </div>
+
+                                <h4 class="mt-lg">Automated Color-Flash Scanner Sequence</h4>
+                                <p class="desc-text mt-sm">Trigger an automated script that flashes individual colors and captures a stereo frame pair for each color (great for photometric stereo analysis).</p>
+                                <button class="btn btn-glow mt-md w-100" onclick="startAutomatedSequence()">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Run Flash-Capture Sequence
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Captured Dataset Gallery -->
+                <div class="glass-card mt-lg">
+                    <div class="card-header">
+                        <h3>Captured Datasets & Scans</h3>
+                        <button class="btn btn-secondary btn-sm" onclick="refreshFileList()"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="datasets-table-wrapper">
+                            <table class="datasets-table">
+                                <thead>
+                                    <tr>
+                                        <th>File Name</th>
+                                        <th>Type</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="file-list-tbody">
+                                    <!-- Populated via Javascript -->
+                                    <tr>
+                                        <td colspan="3" class="center-text text-muted">No files captured yet.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB CONTENT: SETTINGS / DEVICE MANAGER -->
+            <section id="tab-settings" class="tab-content">
+                <div class="glass-card max-width-md">
+                    <div class="card-header">
+                        <h3>Hardware Configurations</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="setting-left-id">Left Camera Index (OpenCV ID)</label>
+                            <input type="number" id="setting-left-id" value="0" min="0">
+                            <span class="input-help">Usually 0 or 1 for integrated/external USB webcams.</span>
+                        </div>
+
+                        <div class="form-group mt-md">
+                            <label for="setting-right-id">Right Camera Index (OpenCV ID)</label>
+                            <input type="number" id="setting-right-id" value="1" min="0">
+                            <span class="input-help">Usually 1 or 2. If the webcam is missing, simulation frames will load instead.</span>
+                        </div>
+
+                        <div class="form-group mt-md">
+                            <label for="setting-resolution">Stream & Capture Resolution</label>
+                            <select id="setting-resolution">
+                                <option value="640x480">640 x 480 (VGA)</option>
+                                <option value="1280x720" selected>1280 x 720 (HD 720p)</option>
+                                <option value="1920x1080">1920 x 1080 (Full HD 1080p)</option>
+                            </select>
+                            <span class="input-help">Webcams must support the selected resolution. Higher resolution will increase network/processing load.</span>
+                        </div>
+
+                        <button class="btn btn-glow mt-lg w-100" id="btn-save-hardware-settings" onclick="saveHardwareSettings()">
+                            <i class="fa-solid fa-floppy-disk"></i> Apply Configurations
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Javascript Controller -->
+    <script src="static/app.js"></script>
+</body>
+</html>
