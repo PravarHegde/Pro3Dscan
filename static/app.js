@@ -12,6 +12,8 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshDevices();
     refreshFileList();
     updateCalculator(); // Run initial baseline calculation
+    scanAvailableCameras(); // Fetch real camera names
+    
     
     // Poll for device changes every 5 seconds
     setInterval(refreshDevices, 5000);
@@ -158,6 +160,54 @@ async function refreshDevices() {
         
     } catch (e) {
         console.error("Failed to connect to backend api status: ", e);
+    }
+}
+// 4.5. Scan Cameras
+async function scanAvailableCameras() {
+    const btn = document.getElementById("btn-scan-cams");
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = "<i class='fa-solid fa-spinner fa-spin'></i> Scanning...";
+    }
+    
+    try {
+        const response = await fetch("/api/devices/scan_cameras");
+        const data = await response.json();
+        
+        if (data.status === "success" && data.cameras.length > 0) {
+            const leftSelect = document.getElementById("setting-left-id");
+            const rightSelect = document.getElementById("setting-right-id");
+            
+            // Keep current selection
+            const currentLeft = leftSelect.value;
+            const currentRight = rightSelect.value;
+            
+            leftSelect.innerHTML = "";
+            rightSelect.innerHTML = "";
+            
+            data.cameras.forEach(cam => {
+                const optL = document.createElement("option");
+                optL.value = cam.id;
+                optL.textContent = cam.name;
+                leftSelect.appendChild(optL);
+                
+                const optR = document.createElement("option");
+                optR.value = cam.id;
+                optR.textContent = cam.name;
+                rightSelect.appendChild(optR);
+            });
+            
+            // Restore selection if still valid, otherwise default to first/second
+            leftSelect.value = currentLeft !== "" ? currentLeft : (data.cameras.length > 0 ? data.cameras[0].id : 0);
+            rightSelect.value = currentRight !== "" ? currentRight : (data.cameras.length > 1 ? data.cameras[1].id : (data.cameras.length > 0 ? data.cameras[0].id : 1));
+        }
+    } catch (e) {
+        console.error("Failed to scan cameras: ", e);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = "<i class='fa-solid fa-search'></i> Scan for Cameras";
+        }
     }
 }
 

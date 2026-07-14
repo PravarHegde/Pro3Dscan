@@ -480,16 +480,24 @@
                     </div>
                     <div class="card-body">
                         <div class="form-group">
-                            <label for="setting-left-id">Left Camera Index (OpenCV ID)</label>
-                            <input type="number" id="setting-left-id" value="0" min="0">
-                            <span class="input-help">Usually 0 or 1 for integrated/external USB webcams.</span>
+                            <label for="setting-left-id">Left Camera</label>
+                            <select id="setting-left-id">
+                                <option value="0">Camera 0</option>
+                            </select>
+                            <span class="input-help">Select the left-side camera.</span>
                         </div>
 
                         <div class="form-group mt-md">
-                            <label for="setting-right-id">Right Camera Index (OpenCV ID)</label>
-                            <input type="number" id="setting-right-id" value="1" min="0">
-                            <span class="input-help">Usually 1 or 2. If the webcam is missing, simulation frames will load instead.</span>
+                            <label for="setting-right-id">Right Camera</label>
+                            <select id="setting-right-id">
+                                <option value="1">Camera 1</option>
+                            </select>
+                            <span class="input-help">Select the right-side camera.</span>
                         </div>
+                        
+                        <button class="btn btn-secondary mt-md w-100" id="btn-scan-cams" onclick="scanAvailableCameras()">
+                            <i class="fa-solid fa-search"></i> Scan for Cameras
+                        </button>
 
                         <div class="form-group mt-md">
                             <label for="setting-resolution">Stream & Capture Resolution</label>

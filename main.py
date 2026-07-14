@@ -41,6 +41,37 @@ current_right_id = 1
 current_width = 640
 current_height = 480
 
+@app.get("/api/devices/scan_cameras")
+async def scan_cameras():
+    # Attempt to use macOS system_profiler to get real camera names
+    try:
+        result = subprocess.run(['system_profiler', 'SPCameraDataType'], capture_output=True, text=True)
+        if result.returncode == 0:
+            cameras = []
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if not line.strip(): continue
+                if line.startswith('    ') and not line.startswith('      '): 
+                    name = line.strip().rstrip(':')
+                    if name:
+                        cameras.append(name)
+            
+            if cameras:
+                mapped = [{"id": i, "name": f"{name} (ID: {i})"} for i, name in enumerate(cameras)]
+                return {"status": "success", "cameras": mapped}
+    except Exception:
+        pass
+        
+    # Fallback if not on Mac or if system_profiler fails
+    # Just probe indices 0-4
+    mapped = []
+    for i in range(5):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            mapped.append({"id": i, "name": f"Camera Device {i}"})
+            cap.release()
+    return {"status": "success", "cameras": mapped}
+
 # Pydantic models for API validation
 class ConnectPortRequest(BaseModel):
     port: str
