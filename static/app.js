@@ -48,9 +48,131 @@ function switchTab(tabId) {
         'calibration': 'Stereo Camera Calibration',
         'calculator': 'Stereo Baseline Calculator',
         'scanner': 'Active Light 3D Scanner',
+        'realtime': 'Real-Time 3D Monitoring',
         'settings': 'Device Manager'
     };
     document.getElementById("page-title").textContent = titles[tabId] || 'Dashboard';
+    
+    // Auto-stop depth stream when navigating away to save CPU
+    if (tabId !== 'realtime' && typeof stopDepthStream === 'function') {
+        stopDepthStream();
+    }
+}
+
+// 2.5 Real-Time Depth Stream Controls (Three.js WebGL)
+let threeScene, threeCamera, threeRenderer, pointCloud, wsConnection, orbitControls;
+
+function initThreeJS() {
+    const container = document.getElementById("three-canvas");
+    if (!container || threeRenderer) return;
+
+    threeScene = new THREE.Scene();
+    threeScene.background = new THREE.Color(0x111111);
+
+    const width = container.clientWidth || 800;
+    const height = container.clientHeight || 400;
+
+    threeCamera = new THREE.PerspectiveCamera(60, width / height, 1, 5000);
+    threeCamera.position.set(0, 0, 500); // 500mm back
+    threeCamera.lookAt(0, 0, 0);
+
+    threeRenderer = new THREE.WebGLRenderer({ antialias: true });
+    threeRenderer.setSize(width, height);
+    container.appendChild(threeRenderer.domElement);
+
+    // Ensure OrbitControls is loaded from CDN
+    if (THREE.OrbitControls) {
+        orbitControls = new THREE.OrbitControls(threeCamera, threeRenderer.domElement);
+        orbitControls.enableDamping = true;
+        orbitControls.dampingFactor = 0.05;
+    }
+
+    // Create empty buffer geometry
+    const geometry = new THREE.BufferGeometry();
+    const material = new THREE.PointsMaterial({ 
+        size: 3, 
+        vertexColors: true,
+        sizeAttenuation: true
+    });
+    
+    pointCloud = new THREE.Points(geometry, material);
+    // OpenCV coordinate system (X right, Y down, Z forward) vs ThreeJS (X right, Y up, Z back)
+    pointCloud.rotation.x = Math.PI; // Flip Y and Z
+    threeScene.add(pointCloud);
+
+    // Add axes helper
+    const axesHelper = new THREE.AxesHelper(100);
+    threeScene.add(axesHelper);
+
+    // Animation loop
+    function animate() {
+        requestAnimationFrame(animate);
+        if (orbitControls) orbitControls.update();
+        threeRenderer.render(threeScene, threeCamera);
+    }
+    animate();
+    
+    // Handle resize
+    window.addEventListener('resize', () => {
+        if (!container || !threeRenderer) return;
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        threeRenderer.setSize(w, h);
+        threeCamera.aspect = w / h;
+        threeCamera.updateProjectionMatrix();
+    });
+}
+
+function startDepthStream() {
+    initThreeJS();
+    
+    if (wsConnection) {
+        wsConnection.close();
+    }
+    
+    const wsUrl = `ws://${window.location.host}/ws/pointcloud`;
+    wsConnection = new WebSocket(wsUrl);
+    wsConnection.binaryType = "arraybuffer";
+    
+    wsConnection.onopen = () => {
+        console.log("PointCloud WS Connected");
+    };
+    
+    wsConnection.onmessage = (event) => {
+        const data = event.data;
+        // Header: 4 bytes (int32 num_points)
+        const header = new Int32Array(data, 0, 1);
+        const numPoints = header[0];
+        
+        if (numPoints <= 0) return;
+        
+        const posOffset = 4;
+        const colOffset = 4 + (numPoints * 3 * 4); // 3 floats per point, 4 bytes per float
+        
+        const positions = new Float32Array(data, posOffset, numPoints * 3);
+        const colorsUint8 = new Uint8Array(data, colOffset, numPoints * 3);
+        
+        // Convert colors to Float32 0-1 for ThreeJS BufferAttribute
+        const colors = new Float32Array(numPoints * 3);
+        for(let i=0; i<numPoints*3; i++) {
+            colors[i] = colorsUint8[i] / 255.0;
+        }
+        
+        pointCloud.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        pointCloud.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        pointCloud.geometry.computeBoundingSphere();
+    };
+    
+    wsConnection.onclose = () => {
+        console.log("PointCloud WS Closed");
+    };
+}
+
+function stopDepthStream() {
+    if (wsConnection) {
+        wsConnection.close();
+        wsConnection = null;
+    }
 }
 
 // 3. Feed Selectors (Split vs SBS vs Rectified)
@@ -211,10 +333,23 @@ async function scanAvailableCameras() {
     }
 }
 
+// Project Management
+function getCurrentProject() {
+    const input = document.getElementById("project-name-input");
+    return input && input.value.trim() !== "" ? input.value.trim() : "MyProject";
+}
+
+function onProjectNameChange() {
+    refreshFileList();
+}
+
 // 5. Save settings
 async function saveHardwareSettings() {
-    const leftId = parseInt(document.getElementById("setting-left-id").value) || 0;
-    const rightId = parseInt(document.getElementById("setting-right-id").value) || 1;
+    let lVal = document.getElementById("setting-left-id").value;
+    let rVal = document.getElementById("setting-right-id").value;
+    const leftId = lVal !== "" ? parseInt(lVal) : 0;
+    const rightId = rVal !== "" ? parseInt(rVal) : 1;
+    
     const resString = document.getElementById("setting-resolution").value;
     const [w, h] = resString.split('x').map(Number);
     
@@ -240,7 +375,11 @@ async function saveHardwareSettings() {
 // 6. VR Recording Actions
 async function startRecording() {
     try {
-        const response = await fetch("/api/record/start", { method: "POST" });
+        const response = await fetch("/api/record/start", { 
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project_name: getCurrentProject() })
+        });
         if (response.ok) {
             const data = await response.json();
             
@@ -511,42 +650,92 @@ async function startAutomatedSequence() {
     }
 }
 
+// Audio beep helper for manual capture
+function playBeep() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        osc.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.15); // 150ms beep
+    } catch (e) {
+        console.warn("AudioContext not supported or disabled");
+    }
+}
+
 // Single capture
 async function captureScanPair() {
+    playBeep(); // Beep immediately for feedback
     try {
-        const response = await fetch("/api/scan/capture", { method: "POST" });
+        const response = await fetch("/api/scan/capture", { 
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project_name: getCurrentProject() })
+        });
         const res = await response.json();
-        alert(res.message + "\nSaved: " + res.left + " & " + res.right);
+        // Remove alert so user doesn't have to click twice
         refreshFileList();
     } catch (e) {
         alert("Scan capture failed.");
     }
 }
 
-// 360 Multi-angle Scan
+// 360 Batch Scan
+let scan360Interval = null;
+let scan360Count = 0;
+
 async function start360Scan() {
     const numAngles = parseInt(document.getElementById("scan-angle-count").value) || 36;
-    const btn = document.getElementById("btn-360-scan");
-    btn.disabled = true;
-    btn.innerHTML = "<i class='fa-solid fa-spinner fa-spin'></i> Scanning...";
+    const btnStart = document.getElementById("btn-360-scan");
+    const btnStop = document.getElementById("btn-360-stop");
+    
+    btnStart.disabled = true;
+    btnStop.disabled = false;
+    btnStart.innerHTML = "<i class='fa-solid fa-spinner fa-spin'></i> Scanning...";
 
     try {
-        const response = await fetch("/api/scan/360", {
+        const response = await fetch("/api/scan/360/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ count: numAngles })
+            body: JSON.stringify({ count: numAngles, project_name: getCurrentProject() })
         });
         const res = await response.json();
-        alert(res.message);
         
-        // Polling or refresh delay might be needed, but for now we refresh immediately and trust backend
-        setTimeout(refreshFileList, 3000);
+        // Start frontend beeping and refreshing
+        scan360Count = numAngles;
+        scan360Interval = setInterval(() => {
+            playBeep();
+            scan360Count--;
+            refreshFileList();
+            if (scan360Count <= 0) {
+                stop360Scan();
+            }
+        }, 2000);
+        
     } catch (e) {
         alert("Failed to start 360 scan sequence.");
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = "<i class='fa-solid fa-sync'></i> Start 360° Scan";
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+        btnStart.innerHTML = "<i class='fa-solid fa-sync'></i> Start 360° Batch Scan";
     }
+}
+
+async function stop360Scan() {
+    const btnStart = document.getElementById("btn-360-scan");
+    const btnStop = document.getElementById("btn-360-stop");
+    
+    clearInterval(scan360Interval);
+    
+    try {
+        await fetch("/api/scan/360/stop", { method: "POST" });
+    } catch(e) {}
+
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+    btnStart.innerHTML = "<i class='fa-solid fa-sync'></i> Start 360° Batch Scan";
+    refreshFileList();
 }
 
 // 3D Reconstruction Extension
@@ -555,12 +744,44 @@ async function run3DReconstruction() {
     btn.disabled = true;
     btn.innerHTML = "<i class='fa-solid fa-spinner fa-spin'></i> Processing Mesh...";
 
+    const formatSelect = document.getElementById("mesh-format-select");
+    const format = formatSelect ? formatSelect.value : "usdz";
+    
+    const engineSelect = document.getElementById("reconstruct-engine-select");
+    const engine = engineSelect ? engineSelect.value : "local";
+    
+    // Get selected files from the table
+    const checkboxes = document.querySelectorAll(".file-checkbox:checked");
+    const selectedFiles = [];
+    for (const cb of checkboxes) {
+        try {
+            const file = JSON.parse(cb.value);
+            if(file.type === "scan") {
+                selectedFiles.push(file.name);
+            }
+        } catch(e) {}
+    }
+    
     try {
-        const response = await fetch("/api/scan/reconstruct", { method: "POST" });
+        const response = await fetch("/api/scan/reconstruct", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ format: format, engine: engine, files: selectedFiles, project_name: getCurrentProject() })
+        });
         const res = await response.json();
         if (response.ok) {
-            alert(res.message + "\nFile: " + res.file);
+            // alert(res.message + "\nFile: " + res.file);
             refreshFileList();
+            
+            // Automatically download the generated model
+            if (res.file) {
+                const a = document.createElement("a");
+                a.href = `/api/files/download/model/${res.file}`;
+                a.download = res.file;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
         } else {
             alert("Error: " + res.detail);
         }
@@ -568,14 +789,43 @@ async function run3DReconstruction() {
         alert("Reconstruction pipeline failed to start.");
     } finally {
         btn.disabled = false;
-        btn.innerHTML = "<i class='fa-solid fa-cube'></i> Generate 3D Mesh (.3mf)";
+        btn.innerHTML = "<i class='fa-solid fa-cube'></i> Generate 3D Mesh";
+    }
+}
+
+// Video Mode
+async function startVideoRecord() {
+    document.getElementById("btn-video-start").disabled = true;
+    document.getElementById("btn-video-stop").disabled = false;
+    try {
+        const response = await fetch("/api/record/start", { method: "POST" });
+        const res = await response.json();
+        if(!response.ok) alert("Error: " + res.detail);
+    } catch(e) {
+        alert("Failed to start recording");
+        document.getElementById("btn-video-start").disabled = false;
+        document.getElementById("btn-video-stop").disabled = true;
+    }
+}
+
+async function stopVideoRecord() {
+    document.getElementById("btn-video-start").disabled = false;
+    document.getElementById("btn-video-stop").disabled = true;
+    try {
+        const response = await fetch("/api/record/stop", { method: "POST" });
+        const res = await response.json();
+        if(response.ok) refreshFileList();
+        else alert("Error: " + res.detail);
+    } catch(e) {
+        alert("Failed to stop recording");
     }
 }
 
 // 12. File list and download rendering
 async function refreshFileList() {
     try {
-        const response = await fetch("/api/files");
+        const pName = encodeURIComponent(getCurrentProject());
+        const response = await fetch(`/api/files?project_name=${pName}`);
         if (!response.ok) return;
         const data = await response.json();
         
@@ -585,18 +835,36 @@ async function refreshFileList() {
         // Merge list files
         const scans = data.scans.map(s => ({ name: s, type: "scan" }));
         const recs = data.recordings.map(r => ({ name: r, type: "recording" }));
-        const allFiles = [...recs, ...scans];
+        const models = (data.models || []).map(m => ({ name: m, type: "model" }));
+        const allFiles = [...models, ...recs, ...scans];
         
         // Update mini badge
-        document.getElementById("mini-scan-count").textContent = `${scans.length} Scans / ${recs.length} Video`;
+        document.getElementById("mini-scan-count").textContent = `${scans.length} Scans / ${recs.length} Video / ${models.length} Models`;
         
         if (allFiles.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="3" class="center-text text-muted">No files captured yet.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="4" class="center-text text-muted">No files captured yet.</td></tr>`;
+            document.getElementById("selectAllCheckbox").checked = false;
+            document.getElementById("selectAllCheckbox").disabled = true;
+            updateDeleteButtonVisibility();
             return;
         }
         
+        document.getElementById("selectAllCheckbox").disabled = false;
+        document.getElementById("selectAllCheckbox").checked = false;
+        updateDeleteButtonVisibility();
+        
         allFiles.forEach(file => {
             const tr = document.createElement("tr");
+            
+            const checkTd = document.createElement("td");
+            checkTd.style.textAlign = "center";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.className = "file-checkbox";
+            cb.value = JSON.stringify({ type: file.type, name: file.name });
+            cb.onchange = updateDeleteButtonVisibility;
+            checkTd.appendChild(cb);
+            tr.appendChild(checkTd);
             
             const nameTd = document.createElement("td");
             nameTd.textContent = file.name;
@@ -604,14 +872,35 @@ async function refreshFileList() {
             
             const typeTd = document.createElement("td");
             const typeSpan = document.createElement("span");
-            typeSpan.className = file.type === "recording" ? "badge badge-vr" : "badge";
-            typeSpan.textContent = file.type === "recording" ? "VR SBS Video" : "Stereo Image";
+            if (file.type === "recording") {
+                typeSpan.className = "badge badge-vr";
+                typeSpan.textContent = "VR SBS Video";
+            } else if (file.type === "model") {
+                typeSpan.className = "badge";
+                typeSpan.style.backgroundColor = "#ff7f50";
+                typeSpan.textContent = "3D Mesh";
+            } else {
+                typeSpan.className = "badge";
+                typeSpan.textContent = "Stereo Image";
+            }
             typeTd.appendChild(typeSpan);
             tr.appendChild(typeTd);
             
             const actionTd = document.createElement("td");
+            
+            const pName = encodeURIComponent(getCurrentProject());
+            
+            if (file.type === "scan" || file.type === "calibration") {
+                const previewBtn = document.createElement("button");
+                previewBtn.className = "btn btn-secondary btn-sm";
+                previewBtn.style.marginRight = "5px";
+                previewBtn.innerHTML = "<i class='fa-solid fa-eye'></i> Preview";
+                previewBtn.onclick = () => openImagePreview(`/api/files/download/${file.type}/${file.name}?project_name=${pName}`, file.name);
+                actionTd.appendChild(previewBtn);
+            }
+            
             const dlBtn = document.createElement("a");
-            dlBtn.href = `/api/files/download/${file.type}/${file.name}`;
+            dlBtn.href = `/api/files/download/${file.type}/${file.name}?project_name=${pName}`;
             dlBtn.className = "btn btn-secondary btn-sm";
             dlBtn.innerHTML = "<i class='fa-solid fa-download'></i> Download";
             dlBtn.setAttribute("download", file.name);
@@ -621,6 +910,143 @@ async function refreshFileList() {
             tbody.appendChild(tr);
         });
     } catch (e) {
-        console.error("Failed to fetch files list", e);
+        console.error("Failed to load files:", e);
+    }
+}
+
+function toggleSelectAll() {
+    const selectAllCb = document.getElementById("selectAllCheckbox");
+    const isChecked = selectAllCb.checked;
+    const checkboxes = document.querySelectorAll(".file-checkbox");
+    checkboxes.forEach(cb => {
+        cb.checked = isChecked;
+    });
+    updateDeleteButtonVisibility();
+}
+
+function updateDeleteButtonVisibility() {
+    const checkboxes = document.querySelectorAll(".file-checkbox");
+    const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
+    const delBtn = document.getElementById("btn-delete-selected");
+    const dlZipBtn = document.getElementById("btn-download-zip-selected");
+    
+    if (delBtn) {
+        delBtn.style.display = anyChecked ? "inline-block" : "none";
+    }
+    if (dlZipBtn) {
+        dlZipBtn.style.display = anyChecked ? "inline-block" : "none";
+    }
+}
+
+async function downloadSelectedZip() {
+    const checkboxes = document.querySelectorAll(".file-checkbox:checked");
+    if (checkboxes.length === 0) return;
+    
+    const dlZipBtn = document.getElementById("btn-download-zip-selected");
+    const originalText = dlZipBtn.innerHTML;
+    dlZipBtn.innerHTML = "<i class='fa-solid fa-spinner fa-spin'></i> Zipping...";
+    dlZipBtn.disabled = true;
+    
+    const filesToDownload = [];
+    for (const cb of checkboxes) {
+        try {
+            filesToDownload.push(JSON.parse(cb.value));
+        } catch (e) {}
+    }
+    
+    try {
+        const response = await fetch("/api/files/download_zip", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                project_name: getCurrentProject(),
+                files: filesToDownload
+            })
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${getCurrentProject()}_files.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+        } else {
+            alert("Failed to download ZIP file.");
+        }
+    } catch (e) {
+        alert("Error occurred during ZIP download.");
+    }
+    
+    dlZipBtn.innerHTML = originalText;
+    dlZipBtn.disabled = false;
+}
+
+async function deleteSelectedFiles() {
+    const checkboxes = document.querySelectorAll(".file-checkbox:checked");
+    if (checkboxes.length === 0) return;
+    
+    if (!confirm(`Are you sure you want to permanently delete ${checkboxes.length} selected file(s)?`)) {
+        return;
+    }
+    
+    let hasError = false;
+    const pName = encodeURIComponent(getCurrentProject());
+    for (const cb of checkboxes) {
+        try {
+            const file = JSON.parse(cb.value);
+            const response = await fetch(`/api/files/${file.type}/${file.name}?project_name=${pName}`, { method: "DELETE" });
+            if (!response.ok) hasError = true;
+        } catch (e) {
+            hasError = true;
+        }
+    }
+    
+    if (hasError) {
+        alert("Some files failed to delete.");
+    }
+    
+    refreshFileList();
+}
+
+// Initialize hotkeys
+document.addEventListener("keydown", (e) => {
+    // Prevent spacebar from triggering when typing in inputs
+    if (e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'textarea') {
+        return;
+    }
+    
+    // Spacebar triggers manual capture
+    if (e.code === "Space") {
+        e.preventDefault(); // Prevent page scrolling
+        const btn = document.getElementById("btn-scan-capture");
+        if (btn) {
+            btn.classList.add("btn-glow-active");
+            captureScanPair();
+            setTimeout(() => btn.classList.remove("btn-glow-active"), 200);
+        }
+    }
+});
+
+// Image Preview Functions
+function openImagePreview(url, caption) {
+    const modal = document.getElementById("image-preview-modal");
+    const img = document.getElementById("img-preview-src");
+    const captionText = document.getElementById("img-preview-caption");
+    
+    if (modal && img) {
+        modal.style.display = "flex";
+        img.src = url;
+        if(captionText) captionText.innerHTML = caption;
+    }
+}
+
+function closeImagePreview() {
+    const modal = document.getElementById("image-preview-modal");
+    if (modal) {
+        modal.style.display = "none";
     }
 }

@@ -13,6 +13,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom Style Sheet -->
     <link rel="stylesheet" href="static/style.css">
+    
+    <!-- Three.js for 3D Point Cloud -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -34,6 +38,9 @@
                 </a>
                 <a href="#" class="nav-item" id="tab-btn-scanner" onclick="switchTab('scanner')">
                     <i class="fa-solid fa-camera-retro"></i> Capture Scanner
+                </a>
+                <a href="#" class="nav-item" id="tab-btn-realtime" onclick="switchTab('realtime')">
+                    <i class="fa-solid fa-layer-group"></i> Real-Time 3D
                 </a>
                 <a href="#" class="nav-item" id="tab-btn-settings" onclick="switchTab('settings')">
                     <i class="fa-solid fa-gears"></i> Device Manager
@@ -338,6 +345,13 @@
                             <h3>Photogrammetry Object Scanning</h3>
                         </div>
                         <div class="card-body">
+                            <!-- Project Settings -->
+                            <div class="form-group mb-lg" style="background: rgba(0,255,255,0.05); padding: 15px; border-radius: 8px; border: 1px solid rgba(0,255,255,0.2);">
+                                <label for="project-name-input" style="color: #00ffff; font-weight: bold;"><i class="fa-solid fa-folder-open"></i> Current Project Name</label>
+                                <input type="text" id="project-name-input" class="form-control mt-sm" value="MyProject" placeholder="e.g. CoffeeMug" onchange="onProjectNameChange()" style="font-size: 1.1em; background: rgba(0,0,0,0.5);">
+                                <span class="input-help">All captures and 3D models will be saved into a folder with this name.</span>
+                            </div>
+                            
                             <div class="stream-container">
                                 <div class="split-view">
                                     <div class="camera-feed-box">
@@ -351,33 +365,81 @@
                                 </div>
                             </div>
                             
-                            <div class="flex-actions mt-lg">
-                                <button class="btn btn-glow btn-large" id="btn-scan-capture" onclick="captureScanPair()">
-                                    <i class="fa-solid fa-camera-retro"></i> Capture Stereo Scan Pair
-                                </button>
+                            <!-- Manual Mode -->
+                            <div class="mt-md">
+                                <h4>1. Manual Capture Mode</h4>
+                                <p class="desc-text mt-sm">Single stereoscopic snapshot. Use Spacebar for rapid capture while rotating object by hand.</p>
+                                <div class="flex-actions mt-sm">
+                                    <button class="btn btn-glow w-100" id="btn-scan-capture" onclick="captureScanPair()">
+                                        <i class="fa-solid fa-camera-retro"></i> Capture Stereo Scan Pair
+                                    </button>
+                                </div>
                             </div>
 
                             <hr class="card-divider mt-lg">
 
+                            <!-- Auto Mode -->
                             <div class="mt-md">
-                                <h4>360° Multi-Angle Batch Scan</h4>
-                                <p class="desc-text mt-sm">Automatically capture multiple angles for 3D reconstruction. You will have 2 seconds between each capture to rotate the object or camera.</p>
+                                <h4>2. Automatic Batch Mode</h4>
+                                <p class="desc-text mt-sm">Automated 360° capture for motorized turntables. Captures one frame every 2 seconds.</p>
                                 <div class="form-group mt-sm">
-                                    <label for="scan-angle-count">Number of Angles (e.g. 25-100)</label>
+                                    <label for="scan-angle-count">Number of Angles</label>
                                     <input type="number" id="scan-angle-count" min="5" max="200" value="36">
                                 </div>
-                                <button class="btn btn-secondary mt-md w-100" id="btn-360-scan" onclick="start360Scan()">
-                                    <i class="fa-solid fa-sync"></i> Start 360° Scan
-                                </button>
+                                <div class="flex-actions mt-sm" style="display: flex; gap: 10px;">
+                                    <button class="btn btn-secondary w-100" id="btn-360-scan" onclick="start360Scan()">
+                                        <i class="fa-solid fa-sync"></i> Start 360° Batch Scan
+                                    </button>
+                                    <button class="btn btn-danger w-100" id="btn-360-stop" onclick="stop360Scan()" disabled>
+                                        <i class="fa-solid fa-stop"></i> Stop 360° Scan
+                                    </button>
+                                </div>
                             </div>
 
                             <hr class="card-divider mt-lg">
 
+                            <!-- Video Mode -->
+                            <div class="mt-md">
+                                <h4>3. Video Recording Mode</h4>
+                                <p class="desc-text mt-sm">Record continuous Side-by-Side (SBS) stereoscopic video.</p>
+                                <div class="flex-actions mt-sm" style="display: flex; gap: 10px;">
+                                    <button class="btn btn-primary w-100" id="btn-video-start" onclick="startVideoRecord()">
+                                        <i class="fa-solid fa-circle-play"></i> Start Recording
+                                    </button>
+                                    <button class="btn btn-danger w-100" id="btn-video-stop" onclick="stopVideoRecord()" disabled>
+                                        <i class="fa-solid fa-stop"></i> Stop Recording
+                                    </button>
+                                </div>
+                            </div>
+
+                            <hr class="card-divider mt-lg">
+
+                            <!-- Generate Model -->
                             <div class="mt-md">
                                 <h4>Generate 3D Model</h4>
-                                <p class="desc-text mt-sm">Convert captured datasets to 3D (.3mf/.stl) using the local Polycam-like converter extension.</p>
+                                <p class="desc-text mt-sm">Process your captured datasets into a 3D mesh.</p>
+                                
+                                <div class="form-group mt-sm">
+                                    <label for="reconstruct-engine-select">Processing Engine</label>
+                                    <select id="reconstruct-engine-select" class="form-select">
+                                        <option value="local">Apple Object Capture (Mac Native)</option>
+                                        <option value="colmap">Probharath Engine (COLMAP Open Source)</option>
+                                        <option value="cloud">Probharath Cloud (Mock)</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group mt-sm">
+                                    <label for="mesh-format-select">Output Format</label>
+                                    <select id="mesh-format-select" class="form-select">
+                                        <option value="usdz" selected>USDZ (Apple Native 3D)</option>
+                                        <option value="obj">OBJ (Geometry & Material)</option>
+                                        <option value="3mf">3MF (Color & Metadata)</option>
+                                        <option value="stl">STL (Geometry Only)</option>
+                                    </select>
+                                </div>
+                                
                                 <button class="btn btn-primary mt-md w-100" id="btn-reconstruct" onclick="run3DReconstruction()">
-                                    <i class="fa-solid fa-cube"></i> Generate 3D Mesh (.3mf)
+                                    <i class="fa-solid fa-cube"></i> Generate 3D Mesh
                                 </button>
                             </div>
                         </div>
@@ -446,8 +508,10 @@
 
                 <!-- Captured Dataset Gallery -->
                 <div class="glass-card mt-lg">
-                    <div class="card-header">
-                        <h3>Captured Datasets & Scans</h3>
+                    <div class="card-header" style="display: flex; gap: 10px; align-items: center;">
+                        <h3 style="margin-right: auto;">Captured Datasets & Scans</h3>
+                        <button class="btn btn-secondary btn-sm" onclick="downloadSelectedZip()" id="btn-download-zip-selected" style="display: none;"><i class="fa-solid fa-file-zipper"></i> Download Selected (ZIP)</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteSelectedFiles()" id="btn-delete-selected" style="display: none;"><i class="fa-solid fa-trash"></i> Delete Selected</button>
                         <button class="btn btn-secondary btn-sm" onclick="refreshFileList()"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
                     </div>
                     <div class="card-body">
@@ -455,6 +519,9 @@
                             <table class="datasets-table">
                                 <thead>
                                     <tr>
+                                        <th style="width: 40px; text-align: center;">
+                                            <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                                        </th>
                                         <th>File Name</th>
                                         <th>Type</th>
                                         <th>Actions</th>
@@ -467,6 +534,30 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB CONTENT: REAL-TIME 3D -->
+            <section id="tab-realtime" class="tab-content">
+                <div class="glass-card feed-card">
+                    <div class="card-header">
+                        <h3>Real-Time Disparity Map</h3>
+                        <span class="badge badge-active">Live Updating</span>
+                    </div>
+                    <div class="card-body center-text">
+                        <p class="desc-text mb-sm">Live 3D Point Cloud estimation. Drag to rotate, scroll to zoom. Requires calibration.</p>
+                        <div class="stream-container" style="max-width: 800px; margin: 0 auto; border: 1px solid rgba(0, 255, 255, 0.2); border-radius: 8px; overflow: hidden; background: #000;">
+                            <div id="three-canvas" style="width: 100%; height: 400px; display: block;"></div>
+                        </div>
+                        <div class="flex-actions mt-md" style="justify-content: center; gap: 10px;">
+                            <button class="btn btn-primary" id="btn-start-depth" onclick="startDepthStream()">
+                                <i class="fa-solid fa-play"></i> Start Depth Feed
+                            </button>
+                            <button class="btn btn-secondary" id="btn-stop-depth" onclick="stopDepthStream()">
+                                <i class="fa-solid fa-pause"></i> Pause Feed
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -516,6 +607,13 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- Image Preview Modal -->
+    <div id="image-preview-modal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.8); align-items: center; justify-content: center;">
+        <span onclick="closeImagePreview()" style="position: absolute; top: 15px; right: 35px; color: #f1f1f1; font-size: 40px; font-weight: bold; cursor: pointer;">&times;</span>
+        <img class="modal-content" id="img-preview-src" style="margin: auto; display: block; max-width: 80%; max-height: 80%; border-radius: 8px;">
+        <div id="img-preview-caption" style="margin: auto; display: block; width: 80%; max-width: 700px; text-align: center; color: #ccc; padding: 10px 0; height: 150px;"></div>
     </div>
 
     <!-- Javascript Controller -->

@@ -30,6 +30,7 @@ class StereoCalibrator:
         self.T = None
         self.E = None
         self.F = None
+        self.Q = None
         
         # Rectification maps
         self.map1_l = None
@@ -141,6 +142,7 @@ class StereoCalibrator:
             image_size, self.R, self.T,
             flags=cv2.CALIB_ZERO_DISPARITY, alpha=0
         )
+        self.Q = Q
         
         # Generate lookup maps for image remapping
         self.map1_l, self.map2_l = cv2.initUndistortRectifyMap(
@@ -174,7 +176,8 @@ class StereoCalibrator:
             "R": self.R.tolist(),
             "T": self.T.tolist(),
             "E": self.E.tolist(),
-            "F": self.F.tolist()
+            "F": self.F.tolist(),
+            "Q": self.Q.tolist() if self.Q is not None else None
         }
         
         with open(self.calibration_file, 'w') as f:
@@ -199,6 +202,7 @@ class StereoCalibrator:
                 self.T = np.array(data["T"])
                 self.E = np.array(data["E"])
                 self.F = np.array(data["F"])
+                self.Q = np.array(data["Q"]) if data.get("Q") is not None else None
                 
                 # Assume standard 640x480 for default, maps will be recomputed if image size changes
                 self.compute_rectification_maps((640, 480))

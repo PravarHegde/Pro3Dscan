@@ -794,3 +794,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
         gap: 15px;
     }
 }
+
+.btn-glow-active { transform: scale(0.95); box-shadow: 0 0 30px rgba(0, 255, 255, 0.8); background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%); }
+

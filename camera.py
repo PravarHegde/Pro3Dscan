@@ -11,6 +11,7 @@ class CameraThread(threading.Thread):
         self.camera_id = camera_id
         self.width = width
         self.height = height
+        self.daemon = True
         self.cap = None
         self.frame = None
         self.running = False
@@ -45,13 +46,22 @@ class CameraThread(threading.Thread):
             print(f"[Camera {self.camera_id}] Web camera not found. Initializing stereo simulator.")
             
         last_time = time.time()
+        fail_count = 0
         while self.running:
             if not self.is_mock and self.cap and self.cap.isOpened():
                 ret, frame = self.cap.read()
                 if ret:
+                    fail_count = 0
                     with self.lock:
                         self.frame = frame.copy()
                 else:
+                    fail_count += 1
+                    if fail_count > 30:
+                        print(f"[Camera {self.camera_id}] Failed to read frames. Switching to mock.")
+                        self.is_mock = True
+                        if self.cap:
+                            self.cap.release()
+                            self.cap = None
                     time.sleep(0.01)
             else:
                 # Mock Frame Generation (Simulated 3D Engine with Stereo Disparity)
